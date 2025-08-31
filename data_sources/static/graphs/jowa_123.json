@@ -1,0 +1,57 @@
+{
+  "nodes": [
+    {
+      "id": "user:jowa_123",
+      "label": "jowa_123",
+      "type": "user",
+      "urls": []
+    },
+    {
+      "id": "site:Twitter",
+      "label": "Twitter",
+      "type": "site",
+      "urls": [
+        "https://twitter.com/jowa_123"
+      ]
+    },
+    {
+      "id": "site:Github",
+      "label": "Github",
+      "type": "site",
+      "urls": [
+        "https://github.com/jowa-123"
+      ]
+    },
+    {
+      "id": "site:Youtube",
+      "label": "Youtube",
+      "type": "site",
+      "urls": [
+        "https://youtube.com/@jowa_123"
+      ]
+    }
+  ],
+  "links": [
+    {
+      "source": "user:jowa_123",
+      "target": "site:Twitter",
+      "tool": "sherlock",
+      "url": "https://twitter.com/jowa_123",
+      "weight": 1.0
+    },
+    {
+      "source": "user:jowa_123",
+      "target": "site:Github",
+      "tool": "sherlock",
+      "url": "https://github.com/jowa-123",
+      "weight": 1.0
+    },
+    {
+      "source": "user:jowa_123",
+      "target": "site:Youtube",
+      "tool": "maigret",
+      "url": "https://youtube.com/@jowa_123",
+      "weight": 1.0
+    }
+  ]
+}
