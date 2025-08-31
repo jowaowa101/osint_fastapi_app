@@ -6,11 +6,9 @@ import feedparser
 from fastapi import FastAPI, Request, Form, Query, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from urllib.parse import unquote
-from fastapi.middleware.cors import CORSMiddleware
-
 
 # Selenium imports
 from selenium import webdriver
@@ -26,100 +24,76 @@ from osint_fastapi_app.run_tools.maigret_runner import run_maigret
 
 # 📡 Data Source Routers
 from osint_fastapi_app.data_sources.reddit_monitor import reddit_router
-from osint_fastapi_app.data_sources.youtube_monitor import router as youtube_router
+from osint_fastapi_app.data_sources.youtube_monitor import router as youtube_monitor_router
 from osint_fastapi_app.data_sources.rss_monitor import rss_router
 from osint_fastapi_app.data_sources.twitter_selenium_scraper import router as twitter_selenium_router
 from osint_fastapi_app.data_sources.monitor_router import router as monitor_router
 from osint_fastapi_app.data_sources.twitter_api import router as twitter_router
 from osint_fastapi_app.data_sources.youtube_transcribe import router as youtube_transcribe_router
-from osint_fastapi_app.data_sources import image_text_ocr  # ✅ OCR Router
-
-# 📊 Graph Route
+from osint_fastapi_app.data_sources import image_text_ocr
 from osint_fastapi_app.data_sources.graph_routes import router as graph_router
-
-# 🧠 Classification Routes (existing)
 from osint_fastapi_app.classification_routes import router as classification_router
+from osint_fastapi_app.data_sources import phone_lookup, github_monitor, social_graph
 
-# 🧠 Hate Speech Keyword Detection (Shamaim’s module)
-
-# SHAMAIM
-from osint_fastapi_app.data_sources import phone_lookup
-from osint_fastapi_app.data_sources import github_monitor
-from osint_fastapi_app.data_sources.youtube_profile_monitor import router as youtube_router
-from osint_fastapi_app.data_sources import social_graph
-
-
-# 🎥 YouTube Search Dependency
+# YouTube Search
 from youtubesearchpython import VideosSearch
+import requests
+from osint_fastapi_app.classifier import classify_text
 
 # ⚙️ FastAPI App Initialization
 app = FastAPI(title="OSINT FastAPI App", version="1.0.0")
 
-# 🔐 Enable CORS for React frontend
+# Path to built React frontend
+frontend_path = os.path.join(os.path.dirname(__file__), "../osint-frontend/build")
+
+# ----------------------------
+# CORS Middleware
+# ----------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["*"],  # For public deployment
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 🗂️ Static and Templates Setup
+# ----------------------------
+# Static Files & Templates
+# ----------------------------
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
-app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
+# Mount React static files if build exists
+if os.path.exists(frontend_path):
+    app.mount("/static", StaticFiles(directory=os.path.join(frontend_path, "static")), name="static")
 
-# CORS so React frontend can talk to backend
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # later you can restrict to http://localhost:3000
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-# 📦 Register All API Routers
+# ----------------------------
+# API Routers
+# ----------------------------
 app.include_router(reddit_router)
 app.include_router(twitter_selenium_router)
-app.include_router(youtube_router)
+app.include_router(youtube_monitor_router)
 app.include_router(rss_router)
 app.include_router(classification_router, prefix="/classification")
 app.include_router(monitor_router)
 app.include_router(twitter_router, prefix="/api")
 app.include_router(youtube_transcribe_router)
-app.include_router(image_text_ocr.router)  # ✅ Include OCR Router
+app.include_router(image_text_ocr.router)
 app.include_router(graph_router, prefix="/social-graph", tags=["Graph"])
 app.include_router(phone_lookup.router, prefix="/phone", tags=["Phone Lookup"])
-app.include_router(
-    github_monitor.router,
-    prefix="/github",   # 👈 all routes will start with /github
-    tags=["GitHub Monitor"]
-)
-app.include_router(youtube_router)
+app.include_router(github_monitor.router, prefix="/github", tags=["GitHub Monitor"])
 app.include_router(social_graph.router)
 
-
-
-
-
-print("🚀 OSINT FastAPI Server Started")
-
-# ================================
-# Root & Web Routes
-# ================================
-@app.get("/")
-def read_root():
+# ----------------------------
+# Root & Health Check
+# ----------------------------
+@app.get("/api/health")
+def health_check():
     return {"message": "✅ OSINT API Running Successfully"}
 
-@app.get("/web", response_class=HTMLResponse)
-def frontend_home(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
-
-# ================================
-# Sherlock & Maigret Scan Endpoint for Frontend
-# ================================
+# ----------------------------
+# Sherlock & Maigret Endpoints
+# ----------------------------
 @app.post("/scan")
 async def scan(username: str = Form(...), tool: str = Form(...)):
     if tool == "sherlock":
@@ -130,22 +104,17 @@ async def scan(username: str = Form(...), tool: str = Form(...)):
         output = {"error": "Invalid tool selected."}
     return {"username": username, "tool": tool, "result": output}
 
-# ================================
-# Sherlock & Maigret Endpoints
-# ================================
 @app.get("/sherlock/{username}")
 def sherlock_scan(username: str):
-    output = run_sherlock(username)
-    return {"tool": "Sherlock", "username": username, "output": output}
+    return {"tool": "Sherlock", "username": username, "output": run_sherlock(username)}
 
 @app.get("/maigret/{username}")
 def maigret_scan(username: str):
-    output = run_maigret(username)
-    return {"tool": "maigret", "username": username, "output": output}
+    return {"tool": "Maigret", "username": username, "output": run_maigret(username)}
 
-# ================================
-# RSS Keyword Endpoint
-# ================================
+# ----------------------------
+# RSS Feed Endpoints
+# ----------------------------
 RSS_FEEDS = [
     "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml",
     "http://feeds.bbci.co.uk/news/technology/rss.xml",
@@ -185,9 +154,9 @@ def get_custom_rss(feed_url: str = Query(...), max_posts: int = 5):
         })
     return results
 
-# ================================
-# 🎥 YouTube Search Router
-# ================================
+# ----------------------------
+# YouTube Search Router
+# ----------------------------
 youtube_search_router = APIRouter(prefix="/youtube", tags=["YouTube"])
 
 @youtube_search_router.get("/search")
@@ -212,17 +181,14 @@ def search_youtube(query: str = Query(..., description="Search term for YouTube"
 
 app.include_router(youtube_search_router)
 
-# ================================
-# 🎥 YouTube Monitor with Hate Speech Classification
-# ================================
-import requests
-from osint_fastapi_app.classifier import classify_text
-
+# ----------------------------
+# YouTube Monitor with Hate Speech Classification
+# ----------------------------
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
 
-youtube_monitor_router = APIRouter(prefix="/monitor", tags=["YouTube Monitor"])
+youtube_monitor_router2 = APIRouter(prefix="/monitor", tags=["YouTube Monitor"])
 
-@youtube_monitor_router.get("/youtube")
+@youtube_monitor_router2.get("/youtube")
 def youtube_monitor(keyword: str = Query(..., description="Search keyword for YouTube videos")):
     if not YOUTUBE_API_KEY:
         return {"error": "YouTube API key not found in environment variables"}
@@ -240,10 +206,7 @@ def youtube_monitor(keyword: str = Query(..., description="Search keyword for Yo
             snippet = item["snippet"]
             text_to_classify = f"{snippet['title']} {snippet.get('description', '')}"
             classification_result = classify_text(text_to_classify)
-            if classification_result["is_hate_speech"]:
-                label = f"Hate Speech ({classification_result['category']})"
-            else:
-                label = "Safe"
+            label = f"Hate Speech ({classification_result['category']})" if classification_result["is_hate_speech"] else "Safe"
             results.append({
                 "title": snippet["title"],
                 "channel": snippet["channelTitle"],
@@ -264,4 +227,16 @@ def youtube_monitor(keyword: str = Query(..., description="Search keyword for Yo
     except requests.exceptions.RequestException as e:
         return {"error": str(e)}
 
-app.include_router(youtube_monitor_router)
+app.include_router(youtube_monitor_router2)
+
+# ----------------------------
+# Serve React Frontend
+# ----------------------------
+@app.get("/{full_path:path}", response_class=HTMLResponse)
+async def serve_react(full_path: str):
+    index_file = os.path.join(frontend_path, "index.html")
+    if os.path.exists(index_file):
+        return FileResponse(index_file)
+    return {"error": "React frontend build not found."}
+
+print("🚀 OSINT FastAPI Server Started")

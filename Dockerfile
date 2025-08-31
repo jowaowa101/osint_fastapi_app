@@ -1,12 +1,22 @@
-FROM python:3.10-slim
+# Base image
+FROM python:3.11-slim
 
+# Set workdir
 WORKDIR /app
 
-COPY osint_fastapi_app/requirements.txt .
+# Copy backend files
+COPY osint_fastapi_app ./osint_fastapi_app
+COPY main.py .
+COPY requirements.txt .
 
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the entire folder (important!)
-COPY . /app/osint_fastapi_app
+# Copy React build
+COPY osint-frontend/build ./osint-frontend/build
 
-CMD ["uvicorn", "osint_fastapi_app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Expose port for Render
+EXPOSE 10000
+
+# Start the server
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "10000"]
